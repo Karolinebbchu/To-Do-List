@@ -1,0 +1,18 @@
+# 依賴套件
+node_modules/
+dist/
+dist-ssr/
+
+# 環境變數（含 Firebase 金鑰，絕對不能上傳）
+.env
+.env.local
+.env.*.local
+
+# 編輯器與系統檔
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.vscode/settings.json
