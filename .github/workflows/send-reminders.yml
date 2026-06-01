@@ -15,13 +15,11 @@ jobs:
         with:
           node-version: '22'
       - name: Install dependencies
-        run: npm install web-push @supabase/supabase-js
+        run: npm install @supabase/supabase-js
       - name: Send due reminders
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          VAPID_PUBLIC_KEY:     ${{ secrets.VAPID_PUBLIC_KEY }}
-          VAPID_PRIVATE_KEY:    ${{ secrets.VAPID_PRIVATE_KEY }}
-          VAPID_SUBJECT:        ${{ secrets.VAPID_SUBJECT }}
+          NTFY_TOPIC:           ${{ secrets.NTFY_TOPIC }}
           USER_TIMEZONE:        'Asia/Hong_Kong'
         run: node .github/scripts/send-reminders.cjs
