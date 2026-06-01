@@ -24,4 +24,4 @@ jobs:
           VAPID_PRIVATE_KEY:    ${{ secrets.VAPID_PRIVATE_KEY }}
           VAPID_SUBJECT:        ${{ secrets.VAPID_SUBJECT }}
           USER_TIMEZONE:        'Asia/Hong_Kong'
-        run: node .github/scripts/send-reminders.js
+        run: node .github/scripts/send-reminders.cjs
