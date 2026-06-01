@@ -53,14 +53,24 @@ async function main() {
       const [rh, rm] = t.split(':').map(Number)
       const [ch, cm] = hhmm.split(':').map(Number)
       const diffMinutes = (ch * 60 + cm) - (rh * 60 + rm)
-      if (diffMinutes < 0 || diffMinutes >= 5) return // not in 5-min window
 
       // Check if already completed
       const history = task.history || {}
       const val = history[dateStr]
       const isDone = val === true || (Array.isArray(val) && val.includes(t))
-      if (!isDone) {
-        dueNow.push({ name: task.name, time: t, id: task.id })
+      if (isDone) return
+
+      const inInitialWindow = diffMinutes >= 0 && diffMinutes < 5
+
+      // Persistent reminder: keep firing every repeat_interval minutes for up to 60 mins
+      const repeatInterval = task.repeat_interval || 2
+      const inPersistentWindow = task.persistent_reminder
+        && diffMinutes >= 0
+        && diffMinutes < 60
+        && (diffMinutes % repeatInterval) < 5
+
+      if (inInitialWindow || inPersistentWindow) {
+        dueNow.push({ name: task.name, time: t, id: task.id, persistent: !!task.persistent_reminder })
       }
     })
   })
@@ -80,10 +90,8 @@ async function main() {
     return res.status
   }
 
-  // If no reminders due right now, send a test ping to verify ntfy works
   if (!dueNow.length) {
-    const status = await ntfySend('Habit Reminder System OK', `No reminders due at ${hhmm} HKT. System is working!`, 2)
-    console.log(`ℹ️  No due reminders — sent test ping, status ${status}`)
+    console.log(`ℹ️  No due reminders at ${hhmm}`)
     return
   }
 
