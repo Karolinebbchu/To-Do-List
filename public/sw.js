@@ -10,6 +10,9 @@ self.addEventListener('push', event => {
       badge: '/favicon.svg',
       tag:   data.tag   || 'habit-reminder',
       requireInteraction: true,
+      // Vibration pattern (ms): vibrate, pause, vibrate, pause, vibrate ...
+      // 500ms on, 200ms off — repeated 5 times = ~3.5 seconds total
+      vibrate: [500, 200, 500, 200, 500, 200, 500, 200, 500],
       data: { url: self.location.origin },
     })
   )

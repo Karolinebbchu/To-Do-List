@@ -74,7 +74,8 @@ function mapTask(row) {
     targetDays:        row.target_days        || [],
     reminderTimes:     row.reminder_times     || [],
     history:           row.history            || {},
-    persistentReminder:row.persistent_reminder || false,
+    persistentReminder: row.persistent_reminder || false,
+    repeatInterval:     row.repeat_interval     || 2,   // minutes between persistent reminders
   }
 }
 
@@ -313,7 +314,7 @@ function TaskDetailModal({ task, onClose, onToggle }) {
 // ============================================================
 // 子組件：每日清單
 // ============================================================
-function DailyChecklist({ tasks, onToggleSlot, onOpenDetail }) {
+function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, currentDate: _ }) {
   const todayKey = getTodayKey()
   const todayStr = getDateStr()
   const todayTasks = tasks.filter(t => t.targetDays.includes(todayKey))
@@ -450,6 +451,7 @@ function GoalModal({ tasks, onClose, onSave, onUpdate, onDelete, editTask = null
   // Time slots: [{ time: '08:00', days: ['Mon','Tue'] }, ...]
   const [timeSlots, setTimeSlots]     = useState(() => rtToSlots(editTask?.reminderTimes, initTargetDays))
   const [persistentReminder, setPersistentReminder] = useState(editTask?.persistentReminder || false)
+  const [repeatInterval, setRepeatInterval]         = useState(editTask?.repeatInterval || 2)
   const [error, setError]   = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -479,6 +481,7 @@ function GoalModal({ tasks, onClose, onSave, onUpdate, onDelete, editTask = null
     setSelectedDays(task.targetDays)
     setTimeSlots(rtToSlots(task.reminderTimes, task.targetDays))
     setPersistentReminder(task.persistentReminder || false)
+    setRepeatInterval(task.repeatInterval || 2)
     setError('')
     document.getElementById('goal-form-top')?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -488,7 +491,7 @@ function GoalModal({ tasks, onClose, onSave, onUpdate, onDelete, editTask = null
     const days = defaultDays || ['Mon','Tue','Wed','Thu','Fri']
     setSelectedDays(days)
     setTimeSlots([{ time: '', days: [...days] }])
-    setPersistentReminder(false); setError('')
+    setPersistentReminder(false); setRepeatInterval(2); setError('')
   }
 
   function toggleDay(day) {
@@ -516,7 +519,7 @@ function GoalModal({ tasks, onClose, onSave, onUpdate, onDelete, editTask = null
 
     setSaving(true)
     try {
-      const payload = { name: name.trim(), description: description.trim(), targetDays: selectedDays, reminderTimes: rt, persistentReminder }
+      const payload = { name: name.trim(), description: description.trim(), targetDays: selectedDays, reminderTimes: rt, persistentReminder, repeatInterval: persistentReminder ? repeatInterval : 2 }
       if (isEditing) {
         const original = tasks.find(t => t.id === editId) || editTask
         await onUpdate({ ...payload, id: editId, history: original?.history || {} })
@@ -648,21 +651,43 @@ function GoalModal({ tasks, onClose, onSave, onUpdate, onDelete, editTask = null
             </div>
 
             {/* 持續提醒開關 */}
-            <div
-              onClick={() => setPersistentReminder(p => !p)}
-              className={`flex items-center justify-between rounded-xl px-4 py-3 mb-4 cursor-pointer transition-colors border ${persistentReminder ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-100 hover:bg-gray-100'}`}
-            >
-              <div className="flex items-center gap-2.5">
-                <AlarmClock size={17} className={persistentReminder ? 'text-orange-500' : 'text-gray-400'} />
-                <div>
-                  <p className={`text-sm font-medium ${persistentReminder ? 'text-orange-700' : 'text-gray-600'}`}>持續提醒模式</p>
-                  <p className="text-xs text-gray-400">每 2 分鐘提醒一次，直到完成為止</p>
+            <div className={`rounded-xl border mb-4 transition-colors ${persistentReminder ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-100'}`}>
+              <div
+                onClick={() => setPersistentReminder(p => !p)}
+                className="flex items-center justify-between px-4 py-3 cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <AlarmClock size={17} className={persistentReminder ? 'text-orange-500' : 'text-gray-400'} />
+                  <div>
+                    <p className={`text-sm font-medium ${persistentReminder ? 'text-orange-700' : 'text-gray-600'}`}>持續提醒模式</p>
+                    <p className="text-xs text-gray-400">到達時間後持續提醒，直到完成為止</p>
+                  </div>
+                </div>
+                <div className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ${persistentReminder ? 'bg-orange-500' : 'bg-gray-300'}`}>
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${persistentReminder ? 'left-5' : 'left-1'}`} />
                 </div>
               </div>
-              {/* Toggle pill */}
-              <div className={`w-10 h-6 rounded-full transition-colors relative ${persistentReminder ? 'bg-orange-500' : 'bg-gray-300'}`}>
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${persistentReminder ? 'left-5' : 'left-1'}`} />
-              </div>
+              {/* 間隔設定（只在開啟時顯示） */}
+              {persistentReminder && (
+                <div className="flex items-center gap-3 px-4 pb-3" onClick={e => e.stopPropagation()}>
+                  <p className="text-xs text-orange-600 shrink-0">每隔</p>
+                  <div className="flex items-center gap-1">
+                    {[2, 5, 10, 15, 30].map(min => (
+                      <button
+                        key={min}
+                        type="button"
+                        onClick={() => setRepeatInterval(min)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                          repeatInterval === min
+                            ? 'bg-orange-500 text-white shadow-sm'
+                            : 'bg-white border border-orange-200 text-orange-500 hover:bg-orange-100'
+                        }`}
+                      >{min} 分</button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-orange-600 shrink-0">提醒一次</p>
+                </div>
+              )}
             </div>
 
             {error && <p className="text-red-500 text-sm">{error}</p>}
@@ -1558,6 +1583,8 @@ export default function App() {
   const [loginLoading, setLoginLoading] = useState(false)
   const [tasks, setTasks]             = useState([])
   const [tasksLoading, setTasksLoading] = useState(false)
+  // currentDate forces a re-render when the calendar day changes (e.g. app kept open overnight)
+  const [currentDate, setCurrentDate] = useState(getDateStr())
   const [showGoalModal, setShowGoalModal]   = useState(false)
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [showWeeklyModal, setShowWeeklyModal] = useState(false)
@@ -1683,7 +1710,8 @@ export default function App() {
 
             const fireKey = `${task.id}_${todayStr}_${t}_p`
             const lastFire = persistentLastFireRef.current[fireKey] || 0
-            if (nowTs - lastFire >= 120000) {
+            const intervalMs = (task.repeatInterval || 2) * 60 * 1000
+            if (nowTs - lastFire >= intervalMs) {
               persistentLastFireRef.current[fireKey] = nowTs
               const msg = `提醒：「${task.name}」${t} 尚未完成！`
               if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -1721,11 +1749,27 @@ export default function App() {
     }
 
     checkReminders()
-    const timer = setInterval(checkReminders, 60000)
+    const timer = setInterval(() => {
+      checkReminders()
+      // Detect midnight: if date changed, refresh UI and clear yesterday's fired log
+      const today = getDateStr()
+      setCurrentDate(prev => {
+        if (prev !== today) {
+          firedRef.current = new Set()
+          return today
+        }
+        return prev
+      })
+    }, 60000)
 
-    // 頁面從背景恢復時，補發最近 30 分鐘內遺漏的提醒
+    // 頁面從背景恢復時，補發最近 30 分鐘內遺漏的提醒，並偵測跨日
     function handleVisible() {
       if (document.visibilityState === 'visible') {
+        const today = getDateStr()
+        setCurrentDate(prev => {
+          if (prev !== today) { firedRef.current = new Set(); return today }
+          return prev
+        })
         checkReminders(30 * 60 * 1000)
       }
     }
@@ -1808,7 +1852,8 @@ export default function App() {
         target_days:        newTask.targetDays,
         reminder_times:     newTask.reminderTimes,
         history:            {},
-        persistent_reminder:newTask.persistentReminder || false,
+        persistent_reminder: newTask.persistentReminder || false,
+        repeat_interval:     newTask.repeatInterval    || 2,
       })
     if (error) {
       console.error('新增任務失敗：', error.message)
@@ -1825,7 +1870,8 @@ export default function App() {
       description:        task.description || '',
       target_days:        task.targetDays,
       reminder_times:     task.reminderTimes,
-      persistent_reminder:task.persistentReminder || false,
+      persistent_reminder: task.persistentReminder || false,
+      repeat_interval:     task.repeatInterval    || 2,
     }).eq('id', task.id)
     if (error) {
       console.error('更新任務失敗：', error.message)
@@ -1988,7 +2034,7 @@ export default function App() {
             <Loader2 size={20} className="animate-spin"/><span className="text-sm">從雲端載入...</span>
           </div>
         ) : (
-          <DailyChecklist tasks={tasks} onToggleSlot={toggleTimeSlot} onOpenDetail={task => setDetailTask(task)} />
+          <DailyChecklist tasks={tasks} onToggleSlot={toggleTimeSlot} onOpenDetail={task => setDetailTask(task)} currentDate={currentDate} />
         )}
 
         {!tasksLoading && tasks.length === 0 && (
