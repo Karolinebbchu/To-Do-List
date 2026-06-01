@@ -46,16 +46,23 @@ async function main() {
     if (!targetDays.includes(todayKey)) return
 
     const times = getTimesForDay(task.reminder_times, todayKey)
+    const nowTs = Date.now()
+    const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
+
     times.forEach(t => {
-      if (t === hhmm) {
-        // Check if already completed
-        const history = task.history || {}
-        const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: TZ }) // YYYY-MM-DD
-        const val = history[dateStr]
-        const isDone = val === true || (Array.isArray(val) && val.includes(t))
-        if (!isDone) {
-          dueNow.push({ name: task.name, time: t, id: task.id })
-        }
+      // Fire if reminder time fell within the past 5 minutes (catches any cron timing)
+      const [rh, rm] = t.split(':').map(Number)
+      const reminderTs = new Date()
+      reminderTs.setHours(rh, rm, 0, 0)
+      const msSince = nowTs - reminderTs.getTime()
+      if (msSince < 0 || msSince >= 5 * 60 * 1000) return // not in window
+
+      // Check if already completed
+      const history = task.history || {}
+      const val = history[dateStr]
+      const isDone = val === true || (Array.isArray(val) && val.includes(t))
+      if (!isDone) {
+        dueNow.push({ name: task.name, time: t, id: task.id })
       }
     })
   })
