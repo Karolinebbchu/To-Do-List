@@ -61,11 +61,21 @@ async function main() {
   })
 
   console.log(`📋 Due reminders: ${dueNow.length}`)
-  if (!dueNow.length) return
 
   // Send via ntfy.sh
   const topic = process.env.NTFY_TOPIC
   if (!topic) { console.error('❌ NTFY_TOPIC secret not set'); return }
+
+  // If no reminders due right now, send a test ping so we can verify ntfy works
+  if (!dueNow.length) {
+    await fetch(`https://ntfy.sh/${topic}`, {
+      method: 'POST',
+      headers: { 'Title': '✅ 習慣提醒系統正常', 'Priority': 'default', 'Tags': 'white_check_mark' },
+      body: `目前沒有到期提醒（${hhmm} HKT）。系統運作正常！`,
+    })
+    console.log('ℹ️  No due reminders — sent test ping')
+    return
+  }
 
   for (const reminder of dueNow) {
     try {
