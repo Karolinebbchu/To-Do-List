@@ -46,16 +46,14 @@ async function main() {
     if (!targetDays.includes(todayKey)) return
 
     const times = getTimesForDay(task.reminder_times, todayKey)
-    const nowTs = Date.now()
     const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
 
     times.forEach(t => {
-      // Fire if reminder time fell within the past 5 minutes (catches any cron timing)
+      // Compare times in HKT directly (both hhmm and t are already HKT strings)
       const [rh, rm] = t.split(':').map(Number)
-      const reminderTs = new Date()
-      reminderTs.setHours(rh, rm, 0, 0)
-      const msSince = nowTs - reminderTs.getTime()
-      if (msSince < 0 || msSince >= 5 * 60 * 1000) return // not in window
+      const [ch, cm] = hhmm.split(':').map(Number)
+      const diffMinutes = (ch * 60 + cm) - (rh * 60 + rm)
+      if (diffMinutes < 0 || diffMinutes >= 5) return // not in 5-min window
 
       // Check if already completed
       const history = task.history || {}
