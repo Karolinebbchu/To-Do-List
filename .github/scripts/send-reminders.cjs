@@ -39,13 +39,17 @@ async function main() {
   const { data: tasks, error: tErr } = await supabase.from('tasks').select('*')
   if (tErr) { console.error('❌ Tasks fetch error:', tErr.message); return }
 
+  console.log(`📦 Total tasks fetched: ${tasks.length}`)
+
   // Find reminders due right now
   const dueNow = []
   tasks.forEach(task => {
     const targetDays = task.target_days || []
-    if (!targetDays.includes(todayKey)) return
-
+    const hasToday = targetDays.includes(todayKey)
     const times = getTimesForDay(task.reminder_times, todayKey)
+    console.log(`🔍 "${task.name}" | days=${JSON.stringify(targetDays)} | hasToday=${hasToday} | times=${JSON.stringify(times)} | persistent=${task.persistent_reminder}`)
+    if (!hasToday) return
+
     const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
 
     times.forEach(t => {
