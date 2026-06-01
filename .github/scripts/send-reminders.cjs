@@ -73,29 +73,26 @@ async function main() {
   const topic = process.env.NTFY_TOPIC
   if (!topic) { console.error('❌ NTFY_TOPIC secret not set'); return }
 
-  // If no reminders due right now, send a test ping so we can verify ntfy works
-  if (!dueNow.length) {
-    await fetch(`https://ntfy.sh/${topic}`, {
+  async function ntfySend(title, message, priority = 3) {
+    const res = await fetch('https://ntfy.sh', {
       method: 'POST',
-      headers: { 'Title': '✅ 習慣提醒系統正常', 'Priority': 'default', 'Tags': 'white_check_mark' },
-      body: `目前沒有到期提醒（${hhmm} HKT）。系統運作正常！`,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic, title, message, priority, tags: ['bell'] }),
     })
-    console.log('ℹ️  No due reminders — sent test ping')
+    return res.status
+  }
+
+  // If no reminders due right now, send a test ping to verify ntfy works
+  if (!dueNow.length) {
+    const status = await ntfySend('Habit Reminder System OK', `No reminders due at ${hhmm} HKT. System is working!`, 2)
+    console.log(`ℹ️  No due reminders — sent test ping, status ${status}`)
     return
   }
 
   for (const reminder of dueNow) {
     try {
-      const res = await fetch(`https://ntfy.sh/${topic}`, {
-        method: 'POST',
-        headers: {
-          'Title':    '📌 習慣提醒',
-          'Priority': 'high',
-          'Tags':     'bell',
-        },
-        body: `「${reminder.name}」${reminder.time} 的時間到了！`,
-      })
-      console.log(`✅ ntfy sent "${reminder.name}" — status ${res.status}`)
+      const status = await ntfySend('Habit Reminder', `[${reminder.time}] ${reminder.name} - time to do it!`, 4)
+      console.log(`✅ ntfy sent "${reminder.name}" — status ${status}`)
     } catch (err) {
       console.error(`❌ ntfy failed:`, err.message)
     }
