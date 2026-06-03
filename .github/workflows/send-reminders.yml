@@ -15,7 +15,12 @@ jobs:
         with:
           node-version: '22'
       - name: Install dependencies
-        run: npm install @supabase/supabase-js
+        run: |
+          for i in 1 2 3; do
+            npm install @supabase/supabase-js && break
+            echo "Attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
       - name: Send due reminders
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
