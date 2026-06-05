@@ -64,7 +64,8 @@ async function main() {
       const isDone = val === true || (Array.isArray(val) && val.includes(t))
       if (isDone) return
 
-      const inInitialWindow = diffMinutes >= 0 && diffMinutes < 5
+      // Window = 2 min (matches cron-job.org interval) so non-persistent habits fire exactly once
+      const inInitialWindow = diffMinutes >= 0 && diffMinutes < 2
 
       // Persistent reminder: keep firing every repeat_interval minutes for up to 60 mins
       const repeatInterval = task.repeat_interval || 2
