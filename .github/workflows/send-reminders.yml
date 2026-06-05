@@ -14,7 +14,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Cache node_modules
+        id: cache-node
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-supabase-js-v2
       - name: Install dependencies
+        if: steps.cache-node.outputs.cache-hit != 'true'
         run: |
           for i in 1 2 3; do
             npm install @supabase/supabase-js && break

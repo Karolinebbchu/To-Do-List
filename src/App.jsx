@@ -32,7 +32,11 @@ function getTodayKey() {
   return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()]
 }
 function getDateStr(date = new Date()) {
-  return date.toISOString().split('T')[0]
+  // Use local (HKT) timezone so history keys match the notification script
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 // ─── 取得特定星期幾的提醒時間 ────────────────────────────────
