@@ -11,7 +11,7 @@ import {
   BarChart3, Settings, Bell, BellOff,
   Calendar, Target, TrendingUp, Award, Clock, LogOut, Loader2, Lock, KeyRound,
   ChevronRight, AlarmClock, Link2, Info, CalendarDays, NotebookPen, Save, CloudOff,
-  Download, Upload, Mail, DatabaseBackup, RefreshCw, Send,
+  Download, Upload, Mail, DatabaseBackup, RefreshCw, Send, ShieldCheck,
 } from 'lucide-react'
 import { supabase } from './supabaseClient'
 
@@ -79,7 +79,8 @@ function mapTask(row) {
     reminderTimes:     row.reminder_times     || [],
     history:           row.history            || {},
     persistentReminder: row.persistent_reminder || false,
-    repeatInterval:     row.repeat_interval     || 2,   // minutes between persistent reminders
+    repeatInterval:     row.repeat_interval     || 2,
+    isPrivate:          row.is_private          || false,
   }
 }
 
@@ -380,6 +381,7 @@ function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, currentDate: _ }) {
                         {task.name}
                       </p>
                       {task.persistentReminder && <AlarmClock size={12} className="shrink-0 text-orange-400" />}
+                      {task.isPrivate && <Lock size={12} className="shrink-0 text-violet-400" />}
                     </div>
                     {task.description && (
                       <p className="text-xs text-gray-400 truncate mt-0.5">
@@ -456,6 +458,7 @@ function GoalModal({ tasks, onClose, onSave, onUpdate, onDelete, editTask = null
   const [timeSlots, setTimeSlots]     = useState(() => rtToSlots(editTask?.reminderTimes, initTargetDays))
   const [persistentReminder, setPersistentReminder] = useState(editTask?.persistentReminder || false)
   const [repeatInterval, setRepeatInterval]         = useState(editTask?.repeatInterval || 2)
+  const [isPrivate, setIsPrivate]                   = useState(editTask?.isPrivate || false)
   const [error, setError]   = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -486,6 +489,7 @@ function GoalModal({ tasks, onClose, onSave, onUpdate, onDelete, editTask = null
     setTimeSlots(rtToSlots(task.reminderTimes, task.targetDays))
     setPersistentReminder(task.persistentReminder || false)
     setRepeatInterval(task.repeatInterval || 2)
+    setIsPrivate(task.isPrivate || false)
     setError('')
     document.getElementById('goal-form-top')?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -495,7 +499,7 @@ function GoalModal({ tasks, onClose, onSave, onUpdate, onDelete, editTask = null
     const days = defaultDays || ['Mon','Tue','Wed','Thu','Fri']
     setSelectedDays(days)
     setTimeSlots([{ time: '', days: [...days] }])
-    setPersistentReminder(false); setRepeatInterval(2); setError('')
+    setPersistentReminder(false); setRepeatInterval(2); setIsPrivate(false); setError('')
   }
 
   function toggleDay(day) {
@@ -523,7 +527,7 @@ function GoalModal({ tasks, onClose, onSave, onUpdate, onDelete, editTask = null
 
     setSaving(true)
     try {
-      const payload = { name: name.trim(), description: description.trim(), targetDays: selectedDays, reminderTimes: rt, persistentReminder, repeatInterval: persistentReminder ? repeatInterval : 2 }
+      const payload = { name: name.trim(), description: description.trim(), targetDays: selectedDays, reminderTimes: rt, persistentReminder, repeatInterval: persistentReminder ? repeatInterval : 2, isPrivate }
       if (isEditing) {
         const original = tasks.find(t => t.id === editId) || editTask
         await onUpdate({ ...payload, id: editId, history: original?.history || {} })
@@ -692,6 +696,23 @@ function GoalModal({ tasks, onClose, onSave, onUpdate, onDelete, editTask = null
                   <p className="text-xs text-orange-600 shrink-0">提醒一次</p>
                 </div>
               )}
+            </div>
+
+            {/* 私密習慣開關 */}
+            <div
+              onClick={() => setIsPrivate(p => !p)}
+              className={`flex items-center justify-between rounded-xl border px-4 py-3 mb-4 cursor-pointer transition-colors ${isPrivate ? 'bg-violet-50 border-violet-200' : 'bg-gray-50 border-gray-100'}`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Lock size={17} className={isPrivate ? 'text-violet-500' : 'text-gray-400'} />
+                <div>
+                  <p className={`text-sm font-medium ${isPrivate ? 'text-violet-700' : 'text-gray-600'}`}>設為私密習慣</p>
+                  <p className="text-xs text-gray-400">查看詳情時需輸入密碼</p>
+                </div>
+              </div>
+              <div className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ${isPrivate ? 'bg-violet-500' : 'bg-gray-300'}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${isPrivate ? 'left-5' : 'left-1'}`} />
+              </div>
             </div>
 
             {error && <p className="text-red-500 text-sm">{error}</p>}
@@ -1574,6 +1595,103 @@ function StatsModal({ tasks, onClose }) {
 // ============================================================
 // 主組件：App
 // ============================================================
+// ─── 習慣詳情密碼（PIN）────────────────────────────────────────
+const PIN_HASH_KEY = 'habitDetailPinHash'
+
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+function hasPinSet() { return !!localStorage.getItem(PIN_HASH_KEY) }
+
+// ── PinModal：設定 / 輸入 / 忘記密碼 ──────────────────────────
+function PinModal({ mode = 'enter', onSuccess, onClose, onForgot }) {
+  // mode: 'enter' | 'set' | 'change'
+  const [pin, setPin]         = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error, setError]     = useState('')
+  const [attempts, setAttempts] = useState(0)
+  const [busy, setBusy]       = useState(false)
+  const inputRef = useRef(null)
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  const title = mode === 'set' || mode === 'change' ? '設定詳情密碼' : '輸入詳情密碼'
+  const isSet = mode === 'set' || mode === 'change'
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!pin) return
+    setBusy(true)
+    try {
+      if (isSet) {
+        if (pin.length < 4) { setError('請輸入至少 4 位數字或字母'); setBusy(false); return }
+        if (pin !== confirm) { setError('兩次輸入不一致'); setBusy(false); return }
+        localStorage.setItem(PIN_HASH_KEY, await sha256(pin))
+        onSuccess()
+      } else {
+        const hash = await sha256(pin)
+        if (hash === localStorage.getItem(PIN_HASH_KEY)) {
+          onSuccess()
+        } else {
+          const n = attempts + 1
+          setAttempts(n)
+          setError(`密碼錯誤${n >= 3 ? '，可點下方「忘記密碼」重設' : ''}`)
+          setPin('')
+          inputRef.current?.focus()
+        }
+      }
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xs p-6">
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={18}/></button>
+        <div className="flex flex-col items-center gap-2 mb-5">
+          <div className="w-12 h-12 bg-violet-100 rounded-full flex items-center justify-center">
+            <Lock size={22} className="text-violet-600"/>
+          </div>
+          <h3 className="text-base font-bold text-gray-800">{title}</h3>
+          {isSet && <p className="text-xs text-gray-400 text-center">設定後，查看私密習慣詳情時需輸入此密碼</p>}
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            ref={inputRef}
+            type="password"
+            value={pin}
+            onChange={e => { setPin(e.target.value); setError('') }}
+            placeholder={isSet ? '設定密碼（至少 4 位）' : '輸入密碼'}
+            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-lg tracking-widest focus:outline-none focus:ring-2 focus:ring-violet-400"
+          />
+          {isSet && (
+            <input
+              type="password"
+              value={confirm}
+              onChange={e => { setConfirm(e.target.value); setError('') }}
+              placeholder="再次輸入確認"
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-lg tracking-widest focus:outline-none focus:ring-2 focus:ring-violet-400"
+            />
+          )}
+          {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+          <button type="submit" disabled={busy}
+            className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:opacity-90 disabled:opacity-60 flex items-center justify-center gap-2">
+            {busy ? <Loader2 size={16} className="animate-spin"/> : <ShieldCheck size={16}/>}
+            {isSet ? '儲存密碼' : '確認'}
+          </button>
+        </form>
+        {!isSet && attempts >= 3 && (
+          <button onClick={onForgot}
+            className="mt-3 w-full text-sm text-violet-600 hover:underline text-center">
+            忘記密碼？發送重設郵件到 tsangbobo49@gmail.com
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Web Push 工具函式 ────────────────────────────────────────
 function urlBase64ToUint8Array(b64) {
   const pad = '='.repeat((4 - b64.length % 4) % 4)
@@ -1603,6 +1721,8 @@ export default function App() {
   const firedRef = useRef(new Set())
   const persistentLastFireRef = useRef({}) // `taskId_date_time_p` → 上次觸發 timestamp
   const [detailTask, setDetailTask] = useState(null) // 目前開啟詳情的任務
+  const [pinModal, setPinModal]     = useState(null)  // { mode, taskId } | null
+  const unlockedIdsRef              = useRef(new Set()) // unlocked private tasks this session
 
   // ─── 定期自動備份：每月 7 / 14 / 21 / 28 日，且只在正式網站觸發 ──
   useEffect(() => {
@@ -1858,6 +1978,7 @@ export default function App() {
         history:            {},
         persistent_reminder: newTask.persistentReminder || false,
         repeat_interval:     newTask.repeatInterval    || 2,
+        is_private:          newTask.isPrivate         || false,
       })
     if (error) {
       console.error('新增任務失敗：', error.message)
@@ -1876,6 +1997,7 @@ export default function App() {
       reminder_times:     task.reminderTimes,
       persistent_reminder: task.persistentReminder || false,
       repeat_interval:     task.repeatInterval    || 2,
+      is_private:          task.isPrivate         || false,
     }).eq('id', task.id)
     if (error) {
       console.error('更新任務失敗：', error.message)
@@ -1939,6 +2061,39 @@ export default function App() {
       times.forEach(t => { if (isTimeCompleted(task, todayStr, t)) toggleTimeSlot(taskId, todayStr, t) })
     } else {
       times.forEach(t => { if (!isTimeCompleted(task, todayStr, t)) toggleTimeSlot(taskId, todayStr, t) })
+    }
+  }
+
+  // ─── 開啟習慣詳情（私密習慣需 PIN）───────────────────────────
+  function openDetail(task) {
+    if (!task.isPrivate || unlockedIdsRef.current.has(task.id)) {
+      setDetailTask(task)
+      return
+    }
+    if (!hasPinSet()) {
+      // No PIN set yet → ask to set one first
+      setPinModal({ mode: 'set', taskId: task.id })
+    } else {
+      setPinModal({ mode: 'enter', taskId: task.id })
+    }
+  }
+
+  // ─── 忘記 PIN：產生新 PIN 並寄信 ────────────────────────────
+  async function handleForgotPin() {
+    const newPin = String(Math.floor(100000 + Math.random() * 900000))
+    localStorage.setItem(PIN_HASH_KEY, await sha256(newPin))
+    setPinModal(null)
+    try {
+      await supabase.functions.invoke('send-backup', {
+        body: {
+          mode: 'pin-reset',
+          newPin,
+          date: getDateStr(),
+        },
+      })
+      alert(`✅ 新密碼已寄到 tsangbobo49@gmail.com！\n請查收信件後使用新密碼。`)
+    } catch {
+      alert(`新密碼為：${newPin}\n（郵件寄送失敗，請記下此密碼）`)
     }
   }
 
@@ -2038,7 +2193,7 @@ export default function App() {
             <Loader2 size={20} className="animate-spin"/><span className="text-sm">從雲端載入...</span>
           </div>
         ) : (
-          <DailyChecklist tasks={tasks} onToggleSlot={toggleTimeSlot} onOpenDetail={task => setDetailTask(task)} currentDate={currentDate} />
+          <DailyChecklist tasks={tasks} onToggleSlot={toggleTimeSlot} onOpenDetail={openDetail} currentDate={currentDate} />
         )}
 
         {!tasksLoading && tasks.length === 0 && (
@@ -2109,6 +2264,25 @@ export default function App() {
           tasks={tasks}
           supabase={supabase}
           userId={user.id}
+        />
+      )}
+
+      {/* PIN Modal */}
+      {pinModal && (
+        <PinModal
+          mode={pinModal.mode}
+          onClose={() => setPinModal(null)}
+          onSuccess={() => {
+            if (pinModal.taskId) {
+              unlockedIdsRef.current.add(pinModal.taskId)
+              const task = tasks.find(t => t.id === pinModal.taskId)
+              setPinModal(null)
+              if (task) setDetailTask(task)
+            } else {
+              setPinModal(null)
+            }
+          }}
+          onForgot={handleForgotPin}
         />
       )}
     </div>

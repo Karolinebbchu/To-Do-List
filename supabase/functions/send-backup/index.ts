@@ -21,7 +21,33 @@ serve(async (req) => {
   try {
     if (!RESEND_API_KEY) return reply({ error: 'RESEND_API_KEY secret is not set in Supabase' })
 
-    const { backup, date } = await req.json()
+    const body = await req.json()
+
+    // ── PIN reset mode ──────────────────────────────────────
+    if (body.mode === 'pin-reset') {
+      const { newPin, date } = body
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: FROM_EMAIL, to: [TO_EMAIL],
+          subject: `🔐 習慣追蹤 — 詳情密碼重設 ${date}`,
+          html: `
+            <h2 style="color:#7c3aed">詳情密碼已重設</h2>
+            <p>您的新習慣詳情密碼為：</p>
+            <div style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#7c3aed;background:#f5f3ff;padding:16px;border-radius:12px;text-align:center;margin:16px 0">${newPin}</div>
+            <p style="color:#6b7280">請登入 App 後輸入此密碼查看私密習慣詳情。建議查看後自行更改為容易記住的密碼。</p>
+            <hr/><p style="font-size:12px;color:#9ca3af">由每日習慣追蹤 App 自動產生</p>
+          `,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) return reply({ error: `Resend error: ${data?.message}` })
+      return reply({ success: true })
+    }
+
+    // ── Backup mode (default) ───────────────────────────────
+    const { backup, date } = body
 
     const taskLines = (backup.tasks ?? [])
       .map((t: { name: string }) => `• ${t.name}`)
