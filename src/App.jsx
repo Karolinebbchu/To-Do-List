@@ -1605,43 +1605,70 @@ async function sha256(str) {
 
 function hasPinSet() { return !!localStorage.getItem(PIN_HASH_KEY) }
 
-// ── PinModal：設定 / 輸入 / 忘記密碼 ──────────────────────────
-function PinModal({ mode = 'enter', onSuccess, onClose, onForgot }) {
-  // mode: 'enter' | 'set' | 'change'
+// ── PinModal：設定 / 輸入 / 忘記密碼（多步驟流程） ────────────
+// steps: 'enter' → 'verify-code' → 'set-new' | 'set' (first time)
+function PinModal({ initialMode = 'enter', onSuccess, onClose, onSendReset }) {
+  const [step, setStep]       = useState(initialMode) // 'enter'|'set'|'verify-code'|'set-new'
   const [pin, setPin]         = useState('')
   const [confirm, setConfirm] = useState('')
+  const [code, setCode]       = useState('')           // code user types from email
+  const [tempCode, setTempCode] = useState('')         // generated code stored in state
   const [error, setError]     = useState('')
-  const [attempts, setAttempts] = useState(0)
   const [busy, setBusy]       = useState(false)
   const inputRef = useRef(null)
-  useEffect(() => { inputRef.current?.focus() }, [])
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 80) }, [step])
 
-  const title = mode === 'set' || mode === 'change' ? '設定詳情密碼' : '輸入詳情密碼'
-  const isSet = mode === 'set' || mode === 'change'
-
-  async function handleSubmit(e) {
+  // ── Enter existing PIN ──────────────────────────────────────
+  async function handleEnter(e) {
     e.preventDefault()
     if (!pin) return
+    const hash = await sha256(pin)
+    if (hash === localStorage.getItem(PIN_HASH_KEY)) {
+      onSuccess()
+    } else {
+      setError('密碼錯誤，請再試一次')
+      setPin('')
+      inputRef.current?.focus()
+    }
+  }
+
+  // ── Set / confirm new PIN ───────────────────────────────────
+  async function handleSet(e) {
+    e.preventDefault()
+    if (pin.length < 4) { setError('請輸入至少 4 位'); return }
+    if (pin !== confirm) { setError('兩次輸入不一致'); return }
+    localStorage.setItem(PIN_HASH_KEY, await sha256(pin))
+    onSuccess()
+  }
+
+  // ── Forgot: generate code, email it ────────────────────────
+  async function handleForgot() {
     setBusy(true)
-    try {
-      if (isSet) {
-        if (pin.length < 4) { setError('請輸入至少 4 位數字或字母'); setBusy(false); return }
-        if (pin !== confirm) { setError('兩次輸入不一致'); setBusy(false); return }
-        localStorage.setItem(PIN_HASH_KEY, await sha256(pin))
-        onSuccess()
-      } else {
-        const hash = await sha256(pin)
-        if (hash === localStorage.getItem(PIN_HASH_KEY)) {
-          onSuccess()
-        } else {
-          const n = attempts + 1
-          setAttempts(n)
-          setError(`密碼錯誤${n >= 3 ? '，可點下方「忘記密碼」重設' : ''}`)
-          setPin('')
-          inputRef.current?.focus()
-        }
-      }
-    } finally { setBusy(false) }
+    const generated = String(Math.floor(100000 + Math.random() * 900000))
+    setTempCode(generated)
+    try { await onSendReset(generated) } catch {}
+    setStep('verify-code')
+    setError('')
+    setBusy(false)
+  }
+
+  // ── Verify emailed code ─────────────────────────────────────
+  function handleVerify(e) {
+    e.preventDefault()
+    if (code === tempCode) {
+      setCode(''); setPin(''); setConfirm(''); setError('')
+      setStep('set-new')
+    } else {
+      setError('驗證碼錯誤，請再檢查信件')
+      setCode('')
+    }
+  }
+
+  const stepConfig = {
+    enter:       { title: '輸入詳情密碼',   icon: <Lock size={22} className="text-violet-600"/> },
+    set:         { title: '設定詳情密碼',   icon: <ShieldCheck size={22} className="text-violet-600"/> },
+    'verify-code':{ title: '輸入驗證碼',    icon: <Mail size={22} className="text-violet-600"/> },
+    'set-new':   { title: '設定新密碼',     icon: <ShieldCheck size={22} className="text-violet-600"/> },
   }
 
   return (
@@ -1649,43 +1676,74 @@ function PinModal({ mode = 'enter', onSuccess, onClose, onForgot }) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xs p-6">
         <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={18}/></button>
+
         <div className="flex flex-col items-center gap-2 mb-5">
           <div className="w-12 h-12 bg-violet-100 rounded-full flex items-center justify-center">
-            <Lock size={22} className="text-violet-600"/>
+            {stepConfig[step].icon}
           </div>
-          <h3 className="text-base font-bold text-gray-800">{title}</h3>
-          {isSet && <p className="text-xs text-gray-400 text-center">設定後，查看私密習慣詳情時需輸入此密碼</p>}
+          <h3 className="text-base font-bold text-gray-800">{stepConfig[step].title}</h3>
+          {step === 'set' && <p className="text-xs text-gray-400 text-center">設定後，查看私密習慣詳情時需輸入此密碼</p>}
+          {step === 'verify-code' && <p className="text-xs text-gray-400 text-center">驗證碼已寄至 tsangbobo49@gmail.com，請查收後輸入</p>}
+          {step === 'set-new' && <p className="text-xs text-gray-400 text-center">驗證成功！請設定你的新密碼</p>}
         </div>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input
-            ref={inputRef}
-            type="password"
-            value={pin}
-            onChange={e => { setPin(e.target.value); setError('') }}
-            placeholder={isSet ? '設定密碼（至少 4 位）' : '輸入密碼'}
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-lg tracking-widest focus:outline-none focus:ring-2 focus:ring-violet-400"
-          />
-          {isSet && (
-            <input
-              type="password"
-              value={confirm}
+
+        {/* ── Enter step ── */}
+        {step === 'enter' && (
+          <form onSubmit={handleEnter} className="space-y-3">
+            <input ref={inputRef} type="password" value={pin}
+              onChange={e => { setPin(e.target.value); setError('') }}
+              placeholder="輸入密碼"
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-lg tracking-widest focus:outline-none focus:ring-2 focus:ring-violet-400" />
+            {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+            <button type="submit"
+              className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:opacity-90 flex items-center justify-center gap-2">
+              <ShieldCheck size={16}/> 確認
+            </button>
+            <button type="button" onClick={handleForgot} disabled={busy}
+              className="w-full text-sm text-violet-500 hover:text-violet-700 py-1 flex items-center justify-center gap-1 disabled:opacity-50">
+              {busy ? <Loader2 size={13} className="animate-spin"/> : <Mail size={13}/>}
+              忘記密碼？發送驗證碼到我的信箱
+            </button>
+          </form>
+        )}
+
+        {/* ── Set step (first time) ── */}
+        {(step === 'set' || step === 'set-new') && (
+          <form onSubmit={handleSet} className="space-y-3">
+            <input ref={inputRef} type="password" value={pin}
+              onChange={e => { setPin(e.target.value); setError('') }}
+              placeholder="設定新密碼（至少 4 位）"
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-lg tracking-widest focus:outline-none focus:ring-2 focus:ring-violet-400" />
+            <input type="password" value={confirm}
               onChange={e => { setConfirm(e.target.value); setError('') }}
               placeholder="再次輸入確認"
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-lg tracking-widest focus:outline-none focus:ring-2 focus:ring-violet-400"
-            />
-          )}
-          {error && <p className="text-red-500 text-xs text-center">{error}</p>}
-          <button type="submit" disabled={busy}
-            className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:opacity-90 disabled:opacity-60 flex items-center justify-center gap-2">
-            {busy ? <Loader2 size={16} className="animate-spin"/> : <ShieldCheck size={16}/>}
-            {isSet ? '儲存密碼' : '確認'}
-          </button>
-        </form>
-        {!isSet && attempts >= 3 && (
-          <button onClick={onForgot}
-            className="mt-3 w-full text-sm text-violet-600 hover:underline text-center">
-            忘記密碼？發送重設郵件到 tsangbobo49@gmail.com
-          </button>
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-lg tracking-widest focus:outline-none focus:ring-2 focus:ring-violet-400" />
+            {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+            <button type="submit"
+              className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:opacity-90 flex items-center justify-center gap-2">
+              <ShieldCheck size={16}/> 儲存密碼
+            </button>
+          </form>
+        )}
+
+        {/* ── Verify code step ── */}
+        {step === 'verify-code' && (
+          <form onSubmit={handleVerify} className="space-y-3">
+            <input ref={inputRef} type="text" inputMode="numeric" value={code}
+              onChange={e => { setCode(e.target.value); setError('') }}
+              placeholder="輸入 6 位驗證碼"
+              maxLength={6}
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.4em] font-mono focus:outline-none focus:ring-2 focus:ring-violet-400" />
+            {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+            <button type="submit"
+              className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:opacity-90 flex items-center justify-center gap-2">
+              <ShieldCheck size={16}/> 驗證
+            </button>
+            <button type="button" onClick={handleForgot} disabled={busy}
+              className="w-full text-xs text-gray-400 hover:text-gray-600 py-1">
+              {busy ? '發送中…' : '重新發送驗證碼'}
+            </button>
+          </form>
         )}
       </div>
     </div>
@@ -2078,23 +2136,11 @@ export default function App() {
     }
   }
 
-  // ─── 忘記 PIN：產生新 PIN 並寄信 ────────────────────────────
-  async function handleForgotPin() {
-    const newPin = String(Math.floor(100000 + Math.random() * 900000))
-    localStorage.setItem(PIN_HASH_KEY, await sha256(newPin))
-    setPinModal(null)
-    try {
-      await supabase.functions.invoke('send-backup', {
-        body: {
-          mode: 'pin-reset',
-          newPin,
-          date: getDateStr(),
-        },
-      })
-      alert(`✅ 新密碼已寄到 tsangbobo49@gmail.com！\n請查收信件後使用新密碼。`)
-    } catch {
-      alert(`新密碼為：${newPin}\n（郵件寄送失敗，請記下此密碼）`)
-    }
+  // ─── 寄送驗證碼到信箱 ────────────────────────────────────────
+  async function sendResetCode(code) {
+    await supabase.functions.invoke('send-backup', {
+      body: { mode: 'pin-reset', newPin: code, date: getDateStr() },
+    })
   }
 
   async function requestNotification() {
@@ -2270,19 +2316,18 @@ export default function App() {
       {/* PIN Modal */}
       {pinModal && (
         <PinModal
-          mode={pinModal.mode}
+          initialMode={pinModal.mode}
           onClose={() => setPinModal(null)}
           onSuccess={() => {
-            if (pinModal.taskId) {
-              unlockedIdsRef.current.add(pinModal.taskId)
-              const task = tasks.find(t => t.id === pinModal.taskId)
-              setPinModal(null)
+            const taskId = pinModal.taskId
+            setPinModal(null)
+            if (taskId) {
+              unlockedIdsRef.current.add(taskId)
+              const task = tasks.find(t => t.id === taskId)
               if (task) setDetailTask(task)
-            } else {
-              setPinModal(null)
             }
           }}
-          onForgot={handleForgotPin}
+          onSendReset={sendResetCode}
         />
       )}
     </div>

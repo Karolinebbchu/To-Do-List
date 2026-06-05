@@ -31,12 +31,12 @@ serve(async (req) => {
         headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           from: FROM_EMAIL, to: [TO_EMAIL],
-          subject: `🔐 習慣追蹤 — 詳情密碼重設 ${date}`,
+          subject: `🔐 習慣追蹤 — 密碼重設驗證碼 ${date}`,
           html: `
-            <h2 style="color:#7c3aed">詳情密碼已重設</h2>
-            <p>您的新習慣詳情密碼為：</p>
-            <div style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#7c3aed;background:#f5f3ff;padding:16px;border-radius:12px;text-align:center;margin:16px 0">${newPin}</div>
-            <p style="color:#6b7280">請登入 App 後輸入此密碼查看私密習慣詳情。建議查看後自行更改為容易記住的密碼。</p>
+            <h2 style="color:#7c3aed">密碼重設驗證碼</h2>
+            <p>請在 App 中輸入以下驗證碼：</p>
+            <div style="font-size:36px;font-weight:bold;letter-spacing:10px;color:#7c3aed;background:#f5f3ff;padding:20px;border-radius:12px;text-align:center;margin:16px 0">${newPin}</div>
+            <p style="color:#6b7280">輸入驗證碼後，你將能夠設定一個新的自訂密碼。此驗證碼僅供一次使用。</p>
             <hr/><p style="font-size:12px;color:#9ca3af">由每日習慣追蹤 App 自動產生</p>
           `,
         }),
