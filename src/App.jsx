@@ -450,7 +450,7 @@ function HabitCalendarModal({ task, onClose }) {
   )
 }
 
-function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, onOpenCalendar, onDismissHabit, currentDate: _ }) {
+function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, onOpenCalendar, onDismissHabit, onUndismissHabit, dismissedHabitIds, currentDate: _ }) {
   const todayKey = getTodayKey()
   const todayStr = getDateStr()
   const todayTasks = tasks.filter(t => t.targetDays.includes(todayKey))
@@ -521,16 +521,27 @@ function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, onOpenCalendar, onD
                     )}
                   </button>
 
-                  {/* 暫時忽略按鈕（持續提醒且未完成時顯示） */}
-                  {task.persistentReminder && !allDone && (
-                    <button
-                      onClick={e => { e.stopPropagation(); onDismissHabit(task) }}
-                      className="shrink-0 p-1 rounded-lg text-orange-300 hover:text-orange-500 hover:bg-orange-50 transition-colors"
-                      title="暫時忽略此提醒（今日）"
-                    >
-                      <BellMinus size={15}/>
-                    </button>
-                  )}
+                  {/* 靜音切換（持續提醒且未完成時顯示） */}
+                  {task.persistentReminder && !allDone && (() => {
+                    const muted = dismissedHabitIds?.has(task.id)
+                    return (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation()
+                          muted ? onUndismissHabit(task) : onDismissHabit(task)
+                        }}
+                        className={`shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-all ${
+                          muted
+                            ? 'bg-orange-100 border-orange-200 text-orange-600'
+                            : 'bg-gray-50 border-gray-200 text-gray-400 hover:border-orange-300 hover:text-orange-500'
+                        }`}
+                        title={muted ? '點擊恢復提醒' : '暫時靜音今日提醒'}
+                      >
+                        <BellMinus size={11}/>
+                        {muted ? '已靜音' : '靜音'}
+                      </button>
+                    )
+                  })()}
 
                   {/* 日曆按鈕 */}
                   <button
@@ -1930,6 +1941,7 @@ export default function App() {
   const firedRef = useRef(new Set())
   const persistentLastFireRef = useRef({})
   const dismissedSlotsRef = useRef(new Set()) // persistent slots dismissed by user this session
+  const [dismissedHabitIds, setDismissedHabitIds] = useState(new Set()) // for UI feedback
   const [detailTask, setDetailTask] = useState(null)
   const [calendarTask, setCalendarTask] = useState(null)
   const [pinModal, setPinModal]     = useState(null)  // { mode, taskId } | null
@@ -2169,8 +2181,17 @@ export default function App() {
     const todayKey = getTodayKey()
     const times = getTimesForDay(task.reminderTimes, todayKey)
     times.forEach(t => dismissedSlotsRef.current.add(`${task.id}_${todayStr}_${t}_p`))
+    setDismissedHabitIds(prev => new Set([...prev, task.id]))
     addToast(`「${task.name}」今日提醒已暫時靜音`)
   }, [addToast])
+
+  const undismissHabit = useCallback((task) => {
+    const todayStr = getDateStr()
+    const todayKey = getTodayKey()
+    const times = getTimesForDay(task.reminderTimes, todayKey)
+    times.forEach(t => dismissedSlotsRef.current.delete(`${task.id}_${todayStr}_${t}_p`))
+    setDismissedHabitIds(prev => { const s = new Set(prev); s.delete(task.id); return s })
+  }, [])
 
   // ─── Auth 操作 ───────────────────────────────────────────────
   async function handleLogin(password) {
@@ -2405,7 +2426,7 @@ export default function App() {
             <Loader2 size={20} className="animate-spin"/><span className="text-sm">從雲端載入...</span>
           </div>
         ) : (
-          <DailyChecklist tasks={tasks} onToggleSlot={toggleTimeSlot} onOpenDetail={openDetail} onOpenCalendar={setCalendarTask} onDismissHabit={dismissHabit} currentDate={currentDate} />
+          <DailyChecklist tasks={tasks} onToggleSlot={toggleTimeSlot} onOpenDetail={openDetail} onOpenCalendar={setCalendarTask} onDismissHabit={dismissHabit} onUndismissHabit={undismissHabit} dismissedHabitIds={dismissedHabitIds} currentDate={currentDate} />
         )}
 
         {!tasksLoading && tasks.length === 0 && (
