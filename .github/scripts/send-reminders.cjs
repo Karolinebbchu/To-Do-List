@@ -58,11 +58,13 @@ async function main() {
       const [ch, cm] = hhmm.split(':').map(Number)
       const diffMinutes = (ch * 60 + cm) - (rh * 60 + rm)
 
-      // Check if already completed
+      // Check if already completed or muted today
       const history = task.history || {}
       const val = history[dateStr]
       const isDone = val === true || (Array.isArray(val) && val.includes(t))
       if (isDone) return
+      const isMuted = history[`${dateStr}_muted`] === true
+      if (isMuted) { console.log(`🔕 "${task.name}" muted today — skipping`); return }
 
       // Window = 2 min (matches cron-job.org interval) so non-persistent habits fire exactly once
       const inInitialWindow = diffMinutes >= 0 && diffMinutes < 2

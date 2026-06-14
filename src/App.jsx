@@ -2011,7 +2011,25 @@ export default function App() {
     if (error) {
       console.error('載入任務失敗：', error.message)
     } else {
-      setTasks((data || []).map(mapTask))
+      const mapped = (data || []).map(mapTask)
+      setTasks(mapped)
+      // Restore mute state: if a task was muted today, update dismissedHabitIds
+      const todayStr = getDateStr()
+      const muteKey = `${todayStr}_muted`
+      const mutedIds = mapped
+        .filter(t => t.history && t.history[muteKey] === true)
+        .map(t => t.id)
+      if (mutedIds.length > 0) {
+        setDismissedHabitIds(new Set(mutedIds))
+        mutedIds.forEach(id => {
+          const task = mapped.find(t => t.id === id)
+          if (!task) return
+          const todayKey = getTodayKey()
+          getTimesForDay(task.reminderTimes, todayKey).forEach(time => {
+            dismissedSlotsRef.current.add(`${id}_${todayStr}_${time}_p`)
+          })
+        })
+      }
     }
     setTasksLoading(false)
   }, [user])
@@ -2175,23 +2193,35 @@ export default function App() {
     dismissedSlotsRef.current.add(`${taskId}_${slotDate}_${slotTime}_p`)
   }, [])
 
-  // Dismiss all today's slots for a habit (called from habit row button)
-  const dismissHabit = useCallback((task) => {
+  // Dismiss all today's slots for a habit — also writes mute flag to Supabase
+  // so the GitHub Actions ntfy script also skips this habit today
+  const dismissHabit = useCallback(async (task) => {
     const todayStr = getDateStr()
     const todayKey = getTodayKey()
     const times = getTimesForDay(task.reminderTimes, todayKey)
     times.forEach(t => dismissedSlotsRef.current.add(`${task.id}_${todayStr}_${t}_p`))
     setDismissedHabitIds(prev => new Set([...prev, task.id]))
     addToast(`「${task.name}」今日提醒已暫時靜音`)
-  }, [addToast])
+    // Write mute flag to Supabase so ntfy script also stops
+    const muteKey = `${todayStr}_muted`
+    const newHistory = { ...task.history, [muteKey]: true }
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, history: newHistory } : t))
+    await supabase.from('tasks').update({ history: newHistory }).eq('id', task.id)
+  }, [addToast, tasks])
 
-  const undismissHabit = useCallback((task) => {
+  const undismissHabit = useCallback(async (task) => {
     const todayStr = getDateStr()
     const todayKey = getTodayKey()
     const times = getTimesForDay(task.reminderTimes, todayKey)
     times.forEach(t => dismissedSlotsRef.current.delete(`${task.id}_${todayStr}_${t}_p`))
     setDismissedHabitIds(prev => { const s = new Set(prev); s.delete(task.id); return s })
-  }, [])
+    // Remove mute flag from Supabase
+    const muteKey = `${todayStr}_muted`
+    const newHistory = { ...task.history }
+    delete newHistory[muteKey]
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, history: newHistory } : t))
+    await supabase.from('tasks').update({ history: newHistory }).eq('id', task.id)
+  }, [tasks])
 
   // ─── Auth 操作 ───────────────────────────────────────────────
   async function handleLogin(password) {
