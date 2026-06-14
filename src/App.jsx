@@ -176,7 +176,7 @@ function LoginScreen({ onLogin, loading }) {
 // ============================================================
 // 子組件：Toast
 // ============================================================
-function ToastList({ toasts, onRemove, onDismissSlot }) {
+function ToastList({ toasts, onRemove }) {
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
       {toasts.map(t => (
@@ -185,14 +185,6 @@ function ToastList({ toasts, onRemove, onDismissSlot }) {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-gray-800">習慣提醒</p>
             <p className="text-sm text-gray-600 mt-0.5">{t.message}</p>
-            {t.isPersistent && (
-              <button
-                onClick={() => { onDismissSlot(t.taskId, t.slotDate, t.slotTime); onRemove(t.id) }}
-                className="mt-1.5 flex items-center gap-1 text-xs text-gray-400 hover:text-orange-500 transition-colors"
-              >
-                <BellMinus size={12}/> 暫時忽略此提醒
-              </button>
-            )}
           </div>
           <button onClick={() => onRemove(t.id)} className="text-gray-400 hover:text-gray-600 shrink-0">
             <X size={16} />
@@ -458,7 +450,7 @@ function HabitCalendarModal({ task, onClose }) {
   )
 }
 
-function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, onOpenCalendar, currentDate: _ }) {
+function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, onOpenCalendar, onDismissHabit, currentDate: _ }) {
   const todayKey = getTodayKey()
   const todayStr = getDateStr()
   const todayTasks = tasks.filter(t => t.targetDays.includes(todayKey))
@@ -528,6 +520,17 @@ function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, onOpenCalendar, cur
                       </p>
                     )}
                   </button>
+
+                  {/* 暫時忽略按鈕（持續提醒且未完成時顯示） */}
+                  {task.persistentReminder && !allDone && (
+                    <button
+                      onClick={e => { e.stopPropagation(); onDismissHabit(task) }}
+                      className="shrink-0 p-1 rounded-lg text-orange-300 hover:text-orange-500 hover:bg-orange-50 transition-colors"
+                      title="暫時忽略此提醒（今日）"
+                    >
+                      <BellMinus size={15}/>
+                    </button>
+                  )}
 
                   {/* 日曆按鈕 */}
                   <button
@@ -2160,6 +2163,15 @@ export default function App() {
     dismissedSlotsRef.current.add(`${taskId}_${slotDate}_${slotTime}_p`)
   }, [])
 
+  // Dismiss all today's slots for a habit (called from habit row button)
+  const dismissHabit = useCallback((task) => {
+    const todayStr = getDateStr()
+    const todayKey = getTodayKey()
+    const times = getTimesForDay(task.reminderTimes, todayKey)
+    times.forEach(t => dismissedSlotsRef.current.add(`${task.id}_${todayStr}_${t}_p`))
+    addToast(`「${task.name}」今日提醒已暫時靜音`)
+  }, [addToast])
+
   // ─── Auth 操作 ───────────────────────────────────────────────
   async function handleLogin(password) {
     setLoginLoading(true)
@@ -2327,7 +2339,7 @@ export default function App() {
   // ─── 已登入主畫面 ────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-violet-50/30 to-indigo-50/50">
-      <ToastList toasts={toasts} onRemove={removeToast} onDismissSlot={dismissSlot} />
+      <ToastList toasts={toasts} onRemove={removeToast} />
 
       <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-100 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
@@ -2393,7 +2405,7 @@ export default function App() {
             <Loader2 size={20} className="animate-spin"/><span className="text-sm">從雲端載入...</span>
           </div>
         ) : (
-          <DailyChecklist tasks={tasks} onToggleSlot={toggleTimeSlot} onOpenDetail={openDetail} onOpenCalendar={setCalendarTask} currentDate={currentDate} />
+          <DailyChecklist tasks={tasks} onToggleSlot={toggleTimeSlot} onOpenDetail={openDetail} onOpenCalendar={setCalendarTask} onDismissHabit={dismissHabit} currentDate={currentDate} />
         )}
 
         {!tasksLoading && tasks.length === 0 && (
