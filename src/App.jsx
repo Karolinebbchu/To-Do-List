@@ -11,7 +11,7 @@ import {
   BarChart3, Settings, Bell, BellOff,
   Calendar, Target, TrendingUp, Award, Clock, LogOut, Loader2, Lock, KeyRound,
   ChevronRight, AlarmClock, Link2, Info, CalendarDays, NotebookPen, Save, CloudOff,
-  Download, Upload, Mail, DatabaseBackup, RefreshCw, Send, ShieldCheck,
+  Download, Upload, Mail, DatabaseBackup, RefreshCw, Send, ShieldCheck, BellMinus,
 } from 'lucide-react'
 import { supabase } from './supabaseClient'
 
@@ -176,7 +176,7 @@ function LoginScreen({ onLogin, loading }) {
 // ============================================================
 // 子組件：Toast
 // ============================================================
-function ToastList({ toasts, onRemove }) {
+function ToastList({ toasts, onRemove, onDismissSlot }) {
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
       {toasts.map(t => (
@@ -185,6 +185,14 @@ function ToastList({ toasts, onRemove }) {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-gray-800">習慣提醒</p>
             <p className="text-sm text-gray-600 mt-0.5">{t.message}</p>
+            {t.isPersistent && (
+              <button
+                onClick={() => { onDismissSlot(t.taskId, t.slotDate, t.slotTime); onRemove(t.id) }}
+                className="mt-1.5 flex items-center gap-1 text-xs text-gray-400 hover:text-orange-500 transition-colors"
+              >
+                <BellMinus size={12}/> 暫時忽略此提醒
+              </button>
+            )}
           </div>
           <button onClick={() => onRemove(t.id)} className="text-gray-400 hover:text-gray-600 shrink-0">
             <X size={16} />
@@ -319,7 +327,138 @@ function TaskDetailModal({ task, onClose, onToggle }) {
 // ============================================================
 // 子組件：每日清單
 // ============================================================
-function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, currentDate: _ }) {
+// ============================================================
+// 子組件：習慣完成日曆（每日綠點）
+// ============================================================
+function HabitCalendarModal({ task, onClose }) {
+  const today = new Date()
+  const [year, setYear]   = useState(today.getFullYear())
+  const [month, setMonth] = useState(today.getMonth()) // 0-indexed
+
+  const DAY_KEYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+  const DAY_LABELS = ['日','一','二','三','四','五','六']
+
+  // completion ratio for a date string
+  function getCompletion(dateStr) {
+    const d = new Date(`${dateStr}T00:00:00`)
+    const dayKey = DAY_KEYS[d.getDay()]
+    const times = getTimesForDay(task.reminderTimes, dayKey)
+    const histVal = (task.history || {})[dateStr]
+    if (!histVal && histVal !== false) return null // no data
+    if (times.length === 0) return histVal === true ? 1 : 0
+    const done = times.filter(t => {
+      if (typeof histVal === 'boolean') return histVal
+      if (Array.isArray(histVal)) return histVal.includes(t)
+      return false
+    }).length
+    return done / times.length
+  }
+
+  function dotColor(ratio) {
+    if (ratio === null || ratio === 0) return null
+    if (ratio < 0.5) return 'bg-green-200'
+    if (ratio < 1)   return 'bg-green-400'
+    return 'bg-green-600'
+  }
+
+  function dotTitle(ratio) {
+    if (ratio === null || ratio === 0) return '未完成'
+    if (ratio < 0.5) return `完成 ${Math.round(ratio*100)}%`
+    if (ratio < 1)   return `完成 ${Math.round(ratio*100)}%`
+    return '全部完成'
+  }
+
+  // calendar grid
+  const firstDay = new Date(year, month, 1)
+  const daysInMonth = new Date(year, month+1, 0).getDate()
+  const startPad = firstDay.getDay() // 0=Sun
+
+  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y-1) } else setMonth(m => m-1) }
+  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y+1) } else setMonth(m => m+1) }
+
+  const todayStr = getDateStr()
+  const monthLabel = `${year} 年 ${month+1} 月`
+
+  const cells = []
+  for (let i = 0; i < startPad; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        {/* header */}
+        <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-3 flex items-center justify-between">
+          <div>
+            <p className="text-violet-200 text-xs">習慣日曆</p>
+            <p className="text-white font-bold text-sm">{task.name}</p>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white p-1 rounded-full hover:bg-white/20">
+            <X size={18}/>
+          </button>
+        </div>
+
+        <div className="p-4">
+          {/* month nav */}
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500">
+              <ChevronRight size={16} className="rotate-180"/>
+            </button>
+            <span className="text-sm font-semibold text-gray-700">{monthLabel}</span>
+            <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+              disabled={year === today.getFullYear() && month === today.getMonth()}>
+              <ChevronRight size={16} className={year === today.getFullYear() && month === today.getMonth() ? 'text-gray-200' : ''}/>
+            </button>
+          </div>
+
+          {/* weekday headers */}
+          <div className="grid grid-cols-7 mb-1">
+            {DAY_LABELS.map(l => (
+              <div key={l} className="text-center text-xs font-medium text-gray-400 py-1">{l}</div>
+            ))}
+          </div>
+
+          {/* days grid */}
+          <div className="grid grid-cols-7 gap-y-1">
+            {cells.map((day, idx) => {
+              if (!day) return <div key={`pad-${idx}`}/>
+              const mm = String(month+1).padStart(2,'0')
+              const dd = String(day).padStart(2,'0')
+              const dateStr = `${year}-${mm}-${dd}`
+              const isFuture = dateStr > todayStr
+              const isToday  = dateStr === todayStr
+              const ratio = isFuture ? null : getCompletion(dateStr)
+              const dc = dotColor(ratio)
+              return (
+                <div key={day} className="flex flex-col items-center py-0.5">
+                  <span className={`text-xs mb-0.5 ${isToday ? 'font-bold text-violet-600' : isFuture ? 'text-gray-300' : 'text-gray-500'}`}>
+                    {day}
+                  </span>
+                  {dc ? (
+                    <div title={dotTitle(ratio)} className={`w-4 h-4 rounded-full ${dc} flex items-center justify-center`}>
+                      {ratio === 1 && <span className="text-white" style={{fontSize:'8px'}}>✓</span>}
+                    </div>
+                  ) : (
+                    <div className={`w-4 h-4 rounded-full ${isFuture ? '' : 'border border-gray-100'}`}/>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* legend */}
+          <div className="flex items-center gap-3 mt-4 justify-center flex-wrap text-xs text-gray-400">
+            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-green-600"/><span>全部完成</span></div>
+            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-green-400"/><span>≥50%</span></div>
+            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-green-200"/><span>&lt;50%</span></div>
+            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full border border-gray-100"/><span>未完成</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, onOpenCalendar, currentDate: _ }) {
   const todayKey = getTodayKey()
   const todayStr = getDateStr()
   const todayTasks = tasks.filter(t => t.targetDays.includes(todayKey))
@@ -388,6 +527,15 @@ function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, currentDate: _ }) {
                         {task.description.slice(0, 40)}{task.description.length > 40 ? '…' : ''}
                       </p>
                     )}
+                  </button>
+
+                  {/* 日曆按鈕 */}
+                  <button
+                    onClick={e => { e.stopPropagation(); onOpenCalendar(task) }}
+                    className="shrink-0 p-1 rounded-lg text-gray-300 hover:text-violet-500 hover:bg-violet-50 transition-colors"
+                    title="查看完成日曆"
+                  >
+                    <CalendarDays size={15}/>
                   </button>
 
                   {/* 右側狀態 */}
@@ -1777,8 +1925,10 @@ export default function App() {
     typeof Notification !== 'undefined' ? Notification.permission : 'denied'
   )
   const firedRef = useRef(new Set())
-  const persistentLastFireRef = useRef({}) // `taskId_date_time_p` → 上次觸發 timestamp
-  const [detailTask, setDetailTask] = useState(null) // 目前開啟詳情的任務
+  const persistentLastFireRef = useRef({})
+  const dismissedSlotsRef = useRef(new Set()) // persistent slots dismissed by user this session
+  const [detailTask, setDetailTask] = useState(null)
+  const [calendarTask, setCalendarTask] = useState(null)
   const [pinModal, setPinModal]     = useState(null)  // { mode, taskId } | null
   const unlockedIdsRef              = useRef(new Set()) // unlocked private tasks this session
 
@@ -1891,6 +2041,7 @@ export default function App() {
             if (nowTs >= slotEnd.getTime())  return
 
             const fireKey = `${task.id}_${todayStr}_${t}_p`
+            if (dismissedSlotsRef.current.has(fireKey)) return
             const lastFire = persistentLastFireRef.current[fireKey] || 0
             const intervalMs = (task.repeatInterval || 2) * 60 * 1000
             if (nowTs - lastFire >= intervalMs) {
@@ -1899,7 +2050,7 @@ export default function App() {
               if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
                 new Notification('📌 習慣提醒', { body: msg, icon: '/favicon.svg' })
               }
-              addToast(msg)
+              addToast(msg, { isPersistent: true, taskId: task.id, slotDate: todayStr, slotTime: t })
             }
           })
         } else {
@@ -1999,12 +2150,15 @@ export default function App() {
   }, [user])
 
   // ─── Toast ──────────────────────────────────────────────────
-  const addToast = useCallback((message) => {
+  const addToast = useCallback((message, opts = {}) => {
     const id = Date.now().toString(36)
-    setToasts(prev => [...prev, { id, message }])
+    setToasts(prev => [...prev, { id, message, ...opts }])
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 8000)
   }, [])
   const removeToast = useCallback((id) => setToasts(prev => prev.filter(t => t.id !== id)), [])
+  const dismissSlot = useCallback((taskId, slotDate, slotTime) => {
+    dismissedSlotsRef.current.add(`${taskId}_${slotDate}_${slotTime}_p`)
+  }, [])
 
   // ─── Auth 操作 ───────────────────────────────────────────────
   async function handleLogin(password) {
@@ -2173,7 +2327,7 @@ export default function App() {
   // ─── 已登入主畫面 ────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-violet-50/30 to-indigo-50/50">
-      <ToastList toasts={toasts} onRemove={removeToast} />
+      <ToastList toasts={toasts} onRemove={removeToast} onDismissSlot={dismissSlot} />
 
       <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-100 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
@@ -2239,7 +2393,7 @@ export default function App() {
             <Loader2 size={20} className="animate-spin"/><span className="text-sm">從雲端載入...</span>
           </div>
         ) : (
-          <DailyChecklist tasks={tasks} onToggleSlot={toggleTimeSlot} onOpenDetail={openDetail} currentDate={currentDate} />
+          <DailyChecklist tasks={tasks} onToggleSlot={toggleTimeSlot} onOpenDetail={openDetail} onOpenCalendar={setCalendarTask} currentDate={currentDate} />
         )}
 
         {!tasksLoading && tasks.length === 0 && (
@@ -2295,6 +2449,12 @@ export default function App() {
           task={tasks.find(t => t.id === detailTask.id) || detailTask}
           onClose={() => setDetailTask(null)}
           onToggle={(id, done) => { toggleToday(id, done); setDetailTask(null) }}
+        />
+      )}
+      {calendarTask && (
+        <HabitCalendarModal
+          task={tasks.find(t => t.id === calendarTask.id) || calendarTask}
+          onClose={() => setCalendarTask(null)}
         />
       )}
       {showNotepad && (
