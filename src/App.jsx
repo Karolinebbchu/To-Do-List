@@ -450,7 +450,7 @@ function HabitCalendarModal({ task, onClose }) {
   )
 }
 
-function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, onOpenCalendar, onDismissHabit, onUndismissHabit, dismissedHabitIds, currentDate: _ }) {
+function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, onOpenCalendar, onDismissHabit, onUndismissHabit, dismissedHabitIds, onEditHabit, currentDate: _ }) {
   const todayKey = getTodayKey()
   const todayStr = getDateStr()
   const todayTasks = tasks.filter(t => t.targetDays.includes(todayKey))
@@ -542,6 +542,15 @@ function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, onOpenCalendar, onD
                       </button>
                     )
                   })()}
+
+                  {/* 編輯按鈕 */}
+                  <button
+                    onClick={e => { e.stopPropagation(); onEditHabit(task) }}
+                    className="shrink-0 p-1 rounded-lg text-gray-300 hover:text-indigo-500 hover:bg-indigo-50 transition-colors"
+                    title="編輯習慣"
+                  >
+                    <Settings size={15}/>
+                  </button>
 
                   {/* 日曆按鈕 */}
                   <button
@@ -2623,7 +2632,7 @@ export default function App() {
             <Loader2 size={20} className="animate-spin"/><span className="text-sm">從雲端載入...</span>
           </div>
         ) : (
-          <DailyChecklist tasks={tasks} onToggleSlot={toggleTimeSlot} onOpenDetail={openDetail} onOpenCalendar={setCalendarTask} onDismissHabit={dismissHabit} onUndismissHabit={undismissHabit} dismissedHabitIds={dismissedHabitIds} currentDate={currentDate} />
+          <DailyChecklist tasks={tasks} onToggleSlot={toggleTimeSlot} onOpenDetail={openDetail} onOpenCalendar={setCalendarTask} onDismissHabit={dismissHabit} onUndismissHabit={undismissHabit} dismissedHabitIds={dismissedHabitIds} onEditHabit={task => { setEditingTask(task); setShowGoalModal(true) }} currentDate={currentDate} />
         )}
 
         {!tasksLoading && tasks.length === 0 && (
