@@ -11,7 +11,7 @@ import {
   BarChart3, Settings, Bell, BellOff,
   Calendar, Target, TrendingUp, Award, Clock, LogOut, Loader2, Lock, KeyRound,
   ChevronRight, AlarmClock, Link2, Info, CalendarDays, NotebookPen, Save, CloudOff,
-  Download, Upload, Mail, DatabaseBackup, RefreshCw, Send, ShieldCheck, BellMinus, BookOpen,
+  Download, Upload, Mail, DatabaseBackup, RefreshCw, Send, ShieldCheck, BellMinus, BookOpen, Pencil,
 } from 'lucide-react'
 import { supabase } from './supabaseClient'
 
@@ -549,7 +549,7 @@ function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, onOpenCalendar, onD
                     className="shrink-0 p-1 rounded-lg text-gray-300 hover:text-indigo-500 hover:bg-indigo-50 transition-colors"
                     title="編輯習慣"
                   >
-                    <Settings size={15}/>
+                    <Pencil size={15}/>
                   </button>
 
                   {/* 日曆按鈕 */}
@@ -921,8 +921,8 @@ function GoalModal({ tasks, onClose, onSave, onUpdate, onDelete, editTask = null
                 <span className="ml-1.5 text-xs font-normal text-gray-400">（選填）</span>
               </label>
               <textarea value={description} onChange={e => setDescription(e.target.value)}
-                placeholder="例：參考影片 https://youtube.com/..." rows={2}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 transition resize-none" />
+                placeholder="例：參考影片 https://youtube.com/..." rows={5}
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 transition resize-y" />
             </div>
 
             <div className="mb-4">
