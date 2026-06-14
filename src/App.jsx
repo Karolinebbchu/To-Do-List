@@ -11,7 +11,7 @@ import {
   BarChart3, Settings, Bell, BellOff,
   Calendar, Target, TrendingUp, Award, Clock, LogOut, Loader2, Lock, KeyRound,
   ChevronRight, AlarmClock, Link2, Info, CalendarDays, NotebookPen, Save, CloudOff,
-  Download, Upload, Mail, DatabaseBackup, RefreshCw, Send, ShieldCheck, BellMinus,
+  Download, Upload, Mail, DatabaseBackup, RefreshCw, Send, ShieldCheck, BellMinus, BookOpen,
 } from 'lucide-react'
 import { supabase } from './supabaseClient'
 
@@ -586,6 +586,168 @@ function DailyChecklist({ tasks, onToggleSlot, onOpenDetail, onOpenCalendar, onD
               </div>
             )
           })
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// 子組件：自由筆記本 Modal
+// ============================================================
+function FreeNotepadModal({ onClose, supabase, userId }) {
+  const [pages, setPages]         = useState([])
+  const [activeId, setActiveId]   = useState(null)
+  const [loading, setLoading]     = useState(true)
+  const [saveStatus, setSaveStatus] = useState('saved') // 'saved'|'saving'|'error'
+  const saveTimer                 = useRef(null)
+
+  // ── Load all pages ──────────────────────────────────────
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase
+        .from('free_notes')
+        .select('id, title, content, updated_at')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false })
+      const rows = data || []
+      setPages(rows)
+      if (rows.length > 0) setActiveId(rows[0].id)
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const activePage = pages.find(p => p.id === activeId) || null
+
+  // ── Add new page ─────────────────────────────────────────
+  async function addPage() {
+    const { data, error } = await supabase
+      .from('free_notes')
+      .insert({ user_id: userId, title: '新筆記', content: '', updated_at: new Date().toISOString() })
+      .select()
+      .single()
+    if (error) { alert('新增失敗：' + error.message); return }
+    setPages(prev => [data, ...prev])
+    setActiveId(data.id)
+  }
+
+  // ── Delete page ──────────────────────────────────────────
+  async function deletePage(id) {
+    if (!window.confirm('確定刪除這則筆記嗎？')) return
+    await supabase.from('free_notes').delete().eq('id', id)
+    setPages(prev => {
+      const next = prev.filter(p => p.id !== id)
+      if (activeId === id) setActiveId(next[0]?.id || null)
+      return next
+    })
+  }
+
+  // ── Auto-save field update ────────────────────────────────
+  function updateField(id, field, value) {
+    setPages(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p))
+    setSaveStatus('saving')
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      const { error } = await supabase
+        .from('free_notes')
+        .update({ [field]: value, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      setSaveStatus(error ? 'error' : 'saved')
+    }, 1200)
+  }
+
+  const saveLabel = {
+    saving: <span className="flex items-center gap-1 text-xs text-amber-400"><Loader2 size={11} className="animate-spin"/>儲存中</span>,
+    saved:  <span className="flex items-center gap-1 text-xs text-emerald-400"><Save size={11}/>已儲存</span>,
+    error:  <span className="flex items-center gap-1 text-xs text-red-400"><CloudOff size={11}/>失敗</span>,
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="modal-enter relative bg-white w-full sm:max-w-2xl rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col" style={{ height: '88vh' }}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <BookOpen className="text-teal-600" size={20} />
+            <h2 className="text-base font-bold text-gray-800">自由筆記本</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            {activePage && saveLabel[saveStatus]}
+            <button onClick={addPage}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 text-white rounded-xl text-sm font-medium hover:bg-teal-700 transition-colors">
+              <Plus size={14}/> 新增
+            </button>
+            <button onClick={onClose} className="p-2 rounded-xl hover:bg-gray-100 text-gray-400">
+              <X size={20}/>
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center gap-2 text-gray-400">
+            <Loader2 size={20} className="animate-spin"/><span className="text-sm">載入中…</span>
+          </div>
+        ) : (
+          <div className="flex flex-1 min-h-0">
+            {/* Page list sidebar */}
+            <div className="w-36 sm:w-48 shrink-0 border-r border-gray-100 overflow-y-auto bg-gray-50/60">
+              {pages.length === 0 ? (
+                <div className="p-4 text-center text-xs text-gray-300 mt-8">
+                  <p>尚無筆記</p>
+                  <p className="mt-1">點擊「新增」開始</p>
+                </div>
+              ) : pages.map(p => (
+                <button key={p.id} onClick={() => setActiveId(p.id)}
+                  className={`w-full text-left px-3 py-3 border-b border-gray-100 transition-colors group ${
+                    p.id === activeId ? 'bg-teal-50 border-l-2 border-l-teal-500' : 'hover:bg-gray-100'
+                  }`}>
+                  <p className={`text-sm font-medium truncate ${p.id === activeId ? 'text-teal-700' : 'text-gray-700'}`}>
+                    {p.title || '（無標題）'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5 truncate">
+                    {p.content ? p.content.slice(0, 30) : '空白'}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            {/* Editor area */}
+            {activePage ? (
+              <div className="flex-1 flex flex-col min-w-0">
+                {/* Title row */}
+                <div className="flex items-center gap-2 px-4 pt-4 pb-2 shrink-0 border-b border-gray-50">
+                  <input
+                    value={activePage.title}
+                    onChange={e => updateField(activePage.id, 'title', e.target.value)}
+                    placeholder="筆記標題…"
+                    className="flex-1 text-base font-bold text-gray-800 outline-none bg-transparent placeholder-gray-300"
+                  />
+                  <button onClick={() => deletePage(activePage.id)}
+                    className="p-1.5 rounded-lg text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors shrink-0">
+                    <Trash2 size={15}/>
+                  </button>
+                </div>
+                {/* Content */}
+                <textarea
+                  value={activePage.content}
+                  onChange={e => updateField(activePage.id, 'content', e.target.value)}
+                  placeholder="在這裡寫下任何東西…"
+                  className="flex-1 resize-none px-4 py-3 text-sm text-gray-700 outline-none bg-transparent leading-relaxed placeholder-gray-300"
+                />
+                <div className="px-4 py-2 border-t border-gray-50 text-xs text-gray-300">
+                  {activePage.content.length} 字
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-gray-300 gap-3">
+                <BookOpen size={40}/>
+                <p className="text-sm">點擊「新增」建立第一則筆記</p>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -1931,6 +2093,7 @@ export default function App() {
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [showWeeklyModal, setShowWeeklyModal] = useState(false)
   const [showNotepad, setShowNotepad]         = useState(false)
+  const [showFreeNotepad, setShowFreeNotepad] = useState(false)
   const [showBackup, setShowBackup]           = useState(false)
   const [editingTask, setEditingTask]         = useState(null)  // 週計畫點擊「編輯」開啟
   const [weeklyAddDays, setWeeklyAddDays]     = useState(null)  // 週計畫點擊「+」帶入的預設日期
@@ -2407,7 +2570,11 @@ export default function App() {
             </button>
             <button onClick={() => setShowNotepad(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">
-              <NotebookPen size={16}/><span className="hidden sm:inline">記事本</span>
+              <NotebookPen size={16}/><span className="hidden sm:inline">日記本</span>
+            </button>
+            <button onClick={() => setShowFreeNotepad(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">
+              <BookOpen size={16}/><span className="hidden sm:inline">筆記本</span>
             </button>
             <button onClick={() => setShowBackup(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">
@@ -2523,6 +2690,13 @@ export default function App() {
       {showNotepad && (
         <NotepadModal
           onClose={() => setShowNotepad(false)}
+          supabase={supabase}
+          userId={user.id}
+        />
+      )}
+      {showFreeNotepad && (
+        <FreeNotepadModal
+          onClose={() => setShowFreeNotepad(false)}
           supabase={supabase}
           userId={user.id}
         />
